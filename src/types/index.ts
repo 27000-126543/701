@@ -21,6 +21,9 @@ export interface MeditationPlan {
   createdAt: string;
 }
 
+export type StressSource = '工作' | '学习' | '人际' | '家庭' | '健康' | '其他' | null;
+export type PracticeTag = '放松' | '专注' | '助眠' | '减压' | '晨间' | '睡前' | '午休' | '通勤';
+
 export interface MeditationSession {
   id: string;
   userId: string;
@@ -35,6 +38,8 @@ export interface MeditationSession {
   completed: boolean;
   moodLevel?: number;
   note?: string;
+  stressSource?: StressSource;
+  tags?: PracticeTag[];
 }
 
 export interface Badge {
