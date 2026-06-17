@@ -115,41 +115,31 @@ export function calculateStreak(sessions: MeditationSession[]): { current: numbe
 
   const today = new Date();
   const todayStr = getDateStr(today);
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = getDateStr(yesterday);
 
   let currentStreak = 0;
   let longestStreak = 0;
   let tempStreak = 0;
-  let currentStreakStarted = false;
 
-  for (let i = 0; i < 365; i++) {
+  const startDay = completedDates.has(todayStr) ? 0 : 1;
+  let countingCurrent = true;
+
+  for (let i = startDay; i < 365; i++) {
     const checkDate = new Date(today);
     checkDate.setDate(checkDate.getDate() - i);
     const dateStr = getDateStr(checkDate);
     
     if (completedDates.has(dateStr)) {
       tempStreak++;
-      longestStreak = Math.max(longestStreak, tempStreak);
-      
-      if (i === 0 || (i === 1 && !completedDates.has(todayStr))) {
-        currentStreakStarted = true;
-      }
-      
-      if (currentStreakStarted) {
+      if (countingCurrent) {
         currentStreak = tempStreak;
       }
+      longestStreak = Math.max(longestStreak, tempStreak);
     } else {
-      if (currentStreakStarted) {
-        currentStreakStarted = false;
+      if (countingCurrent) {
+        countingCurrent = false;
       }
       tempStreak = 0;
     }
-  }
-  
-  if (!completedDates.has(todayStr) && !completedDates.has(yesterdayStr)) {
-    currentStreak = 0;
   }
   
   return { current: currentStreak, longest: longestStreak };

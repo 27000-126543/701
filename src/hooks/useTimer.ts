@@ -32,6 +32,17 @@ export function useTimer(options: UseTimerOptions = {}): UseTimerReturn {
   const intervalRef = useRef<number | null>(null);
   const startTimeRef = useRef<number>(0);
   const pausedTimeRef = useRef<number>(0);
+  const totalSecondsRef = useRef(initialMinutes * 60);
+  const onCompleteRef = useRef(onComplete);
+  const onTickRef = useRef(onTick);
+
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
+
+  useEffect(() => {
+    onTickRef.current = onTick;
+  }, [onTick]);
 
   const formatTime = useCallback((seconds: number): string => {
     const mins = Math.floor(seconds / 60);
@@ -47,24 +58,30 @@ export function useTimer(options: UseTimerOptions = {}): UseTimerReturn {
 
   const tick = useCallback(() => {
     const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
-    const newRemaining = Math.max(0, totalSeconds - elapsed);
+    const newRemaining = Math.max(0, totalSecondsRef.current - elapsed);
     
     setRemainingSeconds(newRemaining);
     
-    if (onTick) {
-      onTick(newRemaining);
+    if (onTickRef.current) {
+      onTickRef.current(newRemaining);
     }
     
     if (newRemaining <= 0) {
-      stop();
-      if (onComplete) {
-        onComplete();
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      setIsRunning(false);
+      setIsPaused(false);
+      if (onCompleteRef.current) {
+        onCompleteRef.current();
       }
     }
-  }, [totalSeconds, onComplete, onTick]);
+  }, []);
 
   const start = useCallback((minutes?: number) => {
-    const seconds = minutes !== undefined ? minutes * 60 : totalSeconds;
+    const seconds = minutes !== undefined ? minutes * 60 : totalSecondsRef.current;
+    totalSecondsRef.current = seconds;
     setTotalSeconds(seconds);
     setRemainingSeconds(seconds);
     setIsRunning(true);
@@ -76,7 +93,7 @@ export function useTimer(options: UseTimerOptions = {}): UseTimerReturn {
       clearInterval(intervalRef.current);
     }
     intervalRef.current = window.setInterval(tick, 1000);
-  }, [totalSeconds, tick]);
+  }, [tick]);
 
   const pause = useCallback(() => {
     if (isRunning && !isPaused) {
@@ -109,8 +126,8 @@ export function useTimer(options: UseTimerOptions = {}): UseTimerReturn {
 
   const reset = useCallback(() => {
     stop();
-    setRemainingSeconds(totalSeconds);
-  }, [stop, totalSeconds]);
+    setRemainingSeconds(totalSecondsRef.current);
+  }, [stop]);
 
   useEffect(() => {
     return () => {

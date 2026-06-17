@@ -24,6 +24,7 @@ export default function Dashboard({ addToast }: DashboardProps) {
   const calculateRecommendedMinutes = useMeditationStore(state => state.calculateRecommendedMinutes);
   const getTodaySessions = useMeditationStore(state => state.getTodaySessions);
   const getUnlockedBadges = useBadgeStore(state => state.getUnlockedBadges);
+  const validateAndFixBadges = useBadgeStore(state => state.validateAndFixBadges);
 
   const [recommendedMinutes, setRecommendedMinutes] = useState(15);
   const [todayMinutes, setTodayMinutes] = useState(0);
@@ -61,6 +62,19 @@ export default function Dashboard({ addToast }: DashboardProps) {
       calculateRecommendedMinutes();
     }
   }, []);
+
+  useEffect(() => {
+    if (user && sessions.length > 0) {
+      const revoked = validateAndFixBadges(
+        user.totalMeditationMinutes,
+        user.currentStreak,
+        sessions.length
+      );
+      if (revoked.length > 0) {
+        addToast({ type: 'info', message: `已更新勋章状态：${revoked.join('、')}` });
+      }
+    }
+  }, [user, sessions, validateAndFixBadges, addToast]);
 
   const activePlan = plans.find(p => p.isActive);
   const membershipLevel = user ? getMembershipLevel(user.totalMeditationMinutes) : null;

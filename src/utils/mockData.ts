@@ -129,8 +129,7 @@ export const mockBadges: Badge[] = [
     badgeName: '坚持不懈',
     description: '连续打卡7天',
     icon: '🔥',
-    earnedDate: formatDate(new Date(today.getTime() - 20 * 24 * 60 * 60 * 1000)),
-    unlocked: true
+    unlocked: false
   },
   {
     id: 'badge_003',

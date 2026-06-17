@@ -20,6 +20,7 @@ export default function Badges({ addToast }: BadgesProps) {
   const initBadges = useBadgeStore(state => state.initBadges);
   const getUnlockedBadges = useBadgeStore(state => state.getUnlockedBadges);
   const getLockedBadges = useBadgeStore(state => state.getLockedBadges);
+  const validateAndFixBadges = useBadgeStore(state => state.validateAndFixBadges);
 
   const [currentDate, setCurrentDate] = useState({
     year: new Date().getFullYear(),
@@ -32,6 +33,16 @@ export default function Badges({ addToast }: BadgesProps) {
     initData();
     initBadges();
   }, [initUser, initData, initBadges]);
+
+  useEffect(() => {
+    if (user && sessions.length > 0) {
+      validateAndFixBadges(
+        user.totalMeditationMinutes,
+        user.currentStreak,
+        sessions.length
+      );
+    }
+  }, [user, sessions, validateAndFixBadges]);
 
   const calendarData = useMemo(() => {
     return generateCalendarData(sessions, currentDate.year, currentDate.month);

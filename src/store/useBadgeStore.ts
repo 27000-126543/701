@@ -8,6 +8,7 @@ interface BadgeStore {
   badges: Badge[];
   initBadges: () => void;
   checkBadgeUnlock: (totalMinutes: number, currentStreak: number, sessionsCount: number) => Badge[];
+  validateAndFixBadges: (totalMinutes: number, currentStreak: number, sessionsCount: number) => string[];
   unlockBadge: (badgeType: string, addNotification?: (n: Notification) => void) => Badge | null;
   getUnlockedBadges: () => Badge[];
   getLockedBadges: () => Badge[];
@@ -45,6 +46,36 @@ export const useBadgeStore = create<BadgeStore>()(
         });
 
         return newlyUnlocked;
+      },
+
+      validateAndFixBadges: (totalMinutes, currentStreak, sessionsCount) => {
+        const { badges } = get();
+        const revokedBadgeNames: string[] = [];
+
+        const checkConditions: Record<string, boolean> = {
+          'first_meditation': sessionsCount >= 1,
+          'streak_7': currentStreak >= 7,
+          'streak_30': currentStreak >= 30,
+          'total_100': totalMinutes >= 100,
+          'total_500': totalMinutes >= 500,
+          'total_1000': totalMinutes >= 1000
+        };
+
+        let hasChanges = false;
+        const updatedBadges = badges.map(badge => {
+          if (badge.unlocked && checkConditions[badge.badgeType] === false) {
+            hasChanges = true;
+            revokedBadgeNames.push(badge.badgeName);
+            return { ...badge, unlocked: false, earnedDate: undefined };
+          }
+          return badge;
+        });
+
+        if (hasChanges) {
+          set({ badges: updatedBadges });
+        }
+
+        return revokedBadgeNames;
       },
 
       unlockBadge: (badgeType, addNotification) => {
