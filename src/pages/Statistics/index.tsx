@@ -52,6 +52,7 @@ export default function Statistics({ addToast }: StatisticsProps) {
   const [report, setReport] = useState<MonthlyReport | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [selectedInsightDay, setSelectedInsightDay] = useState<CalendarDay | null>(null);
+  const [expandedDailyDate, setExpandedDailyDate] = useState<string | null>(null);
 
   useEffect(() => {
     initUser();
@@ -521,37 +522,65 @@ export default function Statistics({ addToast }: StatisticsProps) {
       <motion.div variants={itemVariants} className="glass-card p-6">
         <h3 className="text-xl font-display font-semibold mb-4 flex items-center gap-2">
           <Calendar size={20} className="text-secondary-400" />
-          每日明细
+          每日明细 · {report.year}年{report.month}月
         </h3>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-white/10">
-                <th className="text-left py-3 px-4 text-white/60 font-medium">日期</th>
-                <th className="text-left py-3 px-4 text-white/60 font-medium">冥想时长</th>
-                <th className="text-left py-3 px-4 text-white/60 font-medium">状态</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.dailyBreakdown.map((day, index) => (
-                <tr key={index} className="border-b border-white/5 hover:bg-white/5">
-                  <td className="py-3 px-4">{day.date}</td>
-                  <td className="py-3 px-4">{day.minutes > 0 ? `${day.minutes}分钟` : '-'}</td>
-                  <td className="py-3 px-4">
-                    {day.minutes > 0 ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-secondary-500/20 text-secondary-400 rounded-full text-xs">
-                        ✓ 已打卡
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-white/10 text-white/40 rounded-full text-xs">
-                        未打卡
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-2 max-h-[500px] overflow-y-auto">
+          {report.dailyBreakdown.map((day) => (
+            <div key={day.date} className="rounded-lg overflow-hidden">
+              <div
+                onClick={() => day.sessions && day.sessions.length > 0 && setExpandedDailyDate(expandedDailyDate === day.date ? null : day.date)}
+                className={`flex items-center justify-between p-3 bg-white/5 hover:bg-white/10 transition-colors ${
+                  day.sessions && day.sessions.length > 0 ? 'cursor-pointer' : ''
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                    day.minutes > 0 ? 'bg-secondary-500/20 text-secondary-400' : 'bg-white/5 text-white/30'
+                  }`}>
+                    {new Date(day.date).getDate()}
+                  </div>
+                  <div>
+                    <p className="font-medium text-sm">{day.date}</p>
+                    <p className="text-xs text-white/50">
+                      {day.minutes > 0 ? `${day.minutes}分钟 · ${day.sessions?.length || 0}次` : '未打卡'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {day.minutes > 0 ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-secondary-500/20 text-secondary-400 rounded-full text-xs">
+                      ✓ 已打卡
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-white/10 text-white/40 rounded-full text-xs">
+                      未打卡
+                    </span>
+                  )}
+                  {day.sessions && day.sessions.length > 0 && (
+                    <div className={`transition-transform duration-200 ${expandedDailyDate === day.date ? 'rotate-180' : ''}`}>
+                      <svg className="w-4 h-4 text-white/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  )}
+                </div>
+              </div>
+              {day.sessions && day.sessions.length > 0 && expandedDailyDate === day.date && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="px-3 pb-3"
+                >
+                  <div className="space-y-2 pt-2">
+                    {day.sessions.map(session => (
+                      <SessionDetailCard key={session.id} session={session} />
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </div>
+          ))}
         </div>
       </motion.div>
     </motion.div>

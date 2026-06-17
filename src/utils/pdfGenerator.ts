@@ -69,25 +69,61 @@ export function generateMonthlyReportPDF(
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
-  doc.text('每日冥想时长', 20, summaryY + 95);
-  
-  const tableData = report.dailyBreakdown.slice(0, 15).map(item => [
-    item.date,
-    `${item.minutes}分钟`
-  ]);
-  
-  autoTable(doc, {
-    head: [['日期', '冥想时长']],
-    body: tableData,
-    startY: summaryY + 100,
-    theme: 'grid',
-    styles: { fontSize: 10 },
-    headStyles: { fillColor: [99, 102, 241], textColor: 255 },
-    alternateRowStyles: { fillColor: [248, 250, 252] }
+  doc.text('每日冥想明细', 20, summaryY + 95);
+
+  const detailedData: any[][] = [];
+  report.dailyBreakdown.forEach(day => {
+    if (day.sessions && day.sessions.length > 0) {
+      day.sessions.forEach((session, idx) => {
+        const moodStr = session.moodLevel ? `${getMoodEmoji(session.moodLevel)} ${session.moodLevel}/10` : '-';
+        const stressStr = session.stressSource || '-';
+        const tagsStr = session.tags && session.tags.length > 0 ? session.tags.join('、') : '-';
+        const noteStr = session.note ? session.note : '-';
+
+        detailedData.push([
+          idx === 0 ? day.date : '',
+          session.audioName,
+          `${session.startTime}-${session.endTime}`,
+          `${session.durationMinutes}分钟`,
+          moodStr,
+          stressStr,
+          tagsStr,
+          noteStr
+        ]);
+      });
+    }
   });
+
+  const hasData = detailedData.length > 0;
+  if (hasData) {
+    autoTable(doc, {
+      head: [['日期', '音频', '时间', '时长', '情绪', '压力来源', '标签', '备注']],
+      body: detailedData,
+      startY: summaryY + 100,
+      theme: 'grid',
+      styles: { fontSize: 8, cellWidth: 'wrap' },
+      headStyles: { fillColor: [99, 102, 241], textColor: 255, fontSize: 8 },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      columnStyles: {
+        0: { cellWidth: 22 },
+        1: { cellWidth: 25 },
+        2: { cellWidth: 22 },
+        3: { cellWidth: 16 },
+        4: { cellWidth: 16 },
+        5: { cellWidth: 16 },
+        6: { cellWidth: 25 },
+        7: { cellWidth: 40 }
+      }
+    });
+  } else {
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    doc.text('本月暂无冥想记录', 20, summaryY + 110);
+  }
   
   if (report.badgesEarned.length > 0) {
-    const finalY = (doc as any).lastAutoTable.finalY + 10;
+    const finalY = hasData ? (doc as any).lastAutoTable.finalY + 10 : summaryY + 130;
     
     if (finalY > 250) {
       doc.addPage();
@@ -96,7 +132,7 @@ export function generateMonthlyReportPDF(
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
-    doc.text('本月获得勋章', 20, (doc as any).lastAutoTable.finalY + 20);
+    doc.text('本月获得勋章', 20, finalY);
     
     const badgeData = report.badgesEarned.map(badge => [
       badge.icon,
@@ -108,7 +144,7 @@ export function generateMonthlyReportPDF(
     autoTable(doc, {
       head: [['图标', '勋章名称', '描述', '获得日期']],
       body: badgeData,
-      startY: (doc as any).lastAutoTable.finalY + 25,
+      startY: finalY + 8,
       theme: 'grid',
       styles: { fontSize: 10 },
       headStyles: { fillColor: [251, 191, 36], textColor: 255 },
@@ -116,9 +152,13 @@ export function generateMonthlyReportPDF(
     });
   }
   
+  const lastY = hasData 
+    ? (doc as any).lastAutoTable.finalY + 15 
+    : (report.badgesEarned.length > 0 ? (doc as any).lastAutoTable.finalY + 15 : summaryY + 150);
+  
   doc.setFontSize(10);
   doc.setTextColor(100, 116, 139);
-  doc.text('静心冥想APP - 让每一次呼吸都有意义', pageWidth / 2, 280, { align: 'center' });
+  doc.text('静心冥想APP - 让每一次呼吸都有意义', pageWidth / 2, Math.min(280, Math.max(280, lastY)), { align: 'center' });
   
   doc.save(`静心冥想报告_${report.year}_${report.month}.pdf`);
   
@@ -157,7 +197,8 @@ export function generateMonthlyReportData(
     
     dailyBreakdown.push({
       date: dateStr,
-      minutes: dayMinutes
+      minutes: dayMinutes,
+      sessions: daySessions
     });
     
     if (dayMinutes > 0) {

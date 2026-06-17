@@ -21,6 +21,7 @@ export default function NotificationCenter({ isOpen, onClose }: NotificationCent
   const clearAll = useNotificationStore(state => state.clearAll);
   const getUnreadCount = useNotificationStore(state => state.getUnreadCount);
   const cleanUpInvalidBadgeNotifications = useNotificationStore(state => state.cleanUpInvalidBadgeNotifications);
+  const addNotification = useNotificationStore(state => state.addNotification);
 
   const sessions = useMeditationStore(state => state.sessions);
   const validateAndFixBadges = useBadgeStore(state => state.validateAndFixBadges);
@@ -38,15 +39,20 @@ export default function NotificationCenter({ isOpen, onClose }: NotificationCent
       if (user && (user.currentStreak !== currentStreak || user.longestStreak !== longestStreak || user.totalMeditationMinutes !== totalMinutes)) {
         updateUser({
           currentStreak,
-          longestStreak: Math.max(user.longestStreak, longestStreak),
+          longestStreak,
           totalMeditationMinutes: totalMinutes
         });
       }
 
-      validateAndFixBadges(totalMinutes, currentStreak, sessionsCount);
+      validateAndFixBadges(
+        totalMinutes, 
+        currentStreak, 
+        sessionsCount,
+        (n) => addNotification(n.type, n.title, n.message)
+      );
       cleanUpInvalidBadgeNotifications(currentStreak, totalMinutes, sessionsCount);
     }
-  }, [isOpen, sessions, user, updateUser, validateAndFixBadges, cleanUpInvalidBadgeNotifications]);
+  }, [isOpen, sessions, user, updateUser, validateAndFixBadges, cleanUpInvalidBadgeNotifications, addNotification]);
 
   const getIcon = (type: Notification['type']) => {
     switch (type) {

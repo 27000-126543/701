@@ -23,6 +23,7 @@ export default function Badges({ addToast }: BadgesProps) {
   const getLockedBadges = useBadgeStore(state => state.getLockedBadges);
   const validateAndFixBadges = useBadgeStore(state => state.validateAndFixBadges);
   const cleanUpInvalidBadgeNotifications = useNotificationStore(state => state.cleanUpInvalidBadgeNotifications);
+  const addNotification = useNotificationStore(state => state.addNotification);
   const updateUser = useUserStore(state => state.updateUser);
 
   const [currentDate, setCurrentDate] = useState({
@@ -46,15 +47,20 @@ export default function Badges({ addToast }: BadgesProps) {
       if (user && (user.currentStreak !== currentStreak || user.longestStreak !== longestStreak || user.totalMeditationMinutes !== totalMinutes)) {
         updateUser({
           currentStreak,
-          longestStreak: Math.max(user.longestStreak, longestStreak),
+          longestStreak,
           totalMeditationMinutes: totalMinutes
         });
       }
 
-      validateAndFixBadges(totalMinutes, currentStreak, sessionsCount);
+      validateAndFixBadges(
+        totalMinutes, 
+        currentStreak, 
+        sessionsCount,
+        (n) => addNotification(n.type, n.title, n.message)
+      );
       cleanUpInvalidBadgeNotifications(currentStreak, totalMinutes, sessionsCount);
     }
-  }, [sessions, user, validateAndFixBadges, cleanUpInvalidBadgeNotifications, updateUser]);
+  }, [sessions, user, validateAndFixBadges, cleanUpInvalidBadgeNotifications, updateUser, addNotification]);
 
   const { realtimeStreak, realtimeLongest } = useMemo(() => {
     const { current, longest } = calculateStreak(sessions);

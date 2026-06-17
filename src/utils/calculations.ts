@@ -274,6 +274,17 @@ export function getHabitInsights(sessions: MeditationSession[], days: number = 3
 
   const mostFrequent = timeSlotDistribution.reduce((max, cur) => cur.count > max.count ? cur : max, timeSlotDistribution[0]);
 
+  const checkedInDates = new Set<string>();
+  recentSessions.forEach(s => checkedInDates.add(s.sessionDate));
+
+  const weekdayCheckInDays: Record<string, number> = {};
+  weekdays.forEach(d => { weekdayCheckInDays[d] = 0; });
+  checkedInDates.forEach(dateStr => {
+    const d = new Date(dateStr);
+    const day = weekdays[d.getDay()];
+    weekdayCheckInDays[day]++;
+  });
+
   const allDays = new Set<string>();
   for (let i = 0; i < days; i++) {
     const d = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
@@ -283,7 +294,7 @@ export function getHabitInsights(sessions: MeditationSession[], days: number = 3
   let mostInterrupted: { day: string; count: number } | null = null;
   weekdays.forEach(day => {
     const expectedWeeks = Math.ceil(days / 7);
-    const interrupted = Math.max(0, expectedWeeks - weekdayCounts[day]);
+    const interrupted = Math.max(0, expectedWeeks - weekdayCheckInDays[day]);
     if (interrupted > 0 && (!mostInterrupted || interrupted > mostInterrupted.count)) {
       mostInterrupted = { day, count: interrupted };
     }
@@ -291,7 +302,7 @@ export function getHabitInsights(sessions: MeditationSession[], days: number = 3
 
   const weekdayBreakdown = weekdays.map(day => ({
     day,
-    count: weekdayCounts[day],
+    count: weekdayCheckInDays[day],
     totalMinutes: weekdayMinutes[day]
   }));
 

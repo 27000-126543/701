@@ -7,8 +7,8 @@ import { useMeditationStore } from '../../store/useMeditationStore';
 import { useBadgeStore } from '../../store/useBadgeStore';
 import { useNotificationStore } from '../../store/useNotificationStore';
 import { useCommunityStore } from '../../store/useCommunityStore';
-import { formatDuration, getMembershipLevel, calculateStreak } from '../../utils/calculations';
-import type { ToastMessage } from '../../types';
+import { formatDuration, getMembershipLevel, calculateStreak, getMoodEmoji, getMoodColor } from '../../utils/calculations';
+import type { ToastMessage, MeditationSession } from '../../types';
 
 interface DashboardProps {
   addToast: (message: Omit<ToastMessage, 'id'>) => void;
@@ -27,10 +27,12 @@ export default function Dashboard({ addToast }: DashboardProps) {
   const getUnlockedBadges = useBadgeStore(state => state.getUnlockedBadges);
   const validateAndFixBadges = useBadgeStore(state => state.validateAndFixBadges);
   const cleanUpInvalidBadgeNotifications = useNotificationStore(state => state.cleanUpInvalidBadgeNotifications);
+  const addNotification = useNotificationStore(state => state.addNotification);
   const updateUser = useUserStore(state => state.updateUser);
 
   const [recommendedMinutes, setRecommendedMinutes] = useState(15);
   const [todayMinutes, setTodayMinutes] = useState(0);
+  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
   const posts = useCommunityStore(state => state.posts);
   const initPosts = useCommunityStore(state => state.initPosts);
   const likePost = useCommunityStore(state => state.likePost);
@@ -70,26 +72,33 @@ export default function Dashboard({ addToast }: DashboardProps) {
     if (sessions.length > 0) {
       const { current: currentStreak, longest: longestStreak } = calculateStreak(sessions);
       const totalMinutes = sessions.filter(s => s.completed).reduce((sum, s) => sum + s.durationMinutes, 0);
+      const completedCount = sessions.filter(s => s.completed).length;
 
       if (user && (user.currentStreak !== currentStreak || user.longestStreak !== longestStreak || user.totalMeditationMinutes !== totalMinutes)) {
         updateUser({
           currentStreak,
-          longestStreak: Math.max(user.longestStreak, longestStreak),
+          longestStreak,
           totalMeditationMinutes: totalMinutes
         });
       }
 
-      const revokedBadges = validateAndFixBadges(totalMinutes, currentStreak, sessions.filter(s => s.completed).length);
-      const removedNotifications = cleanUpInvalidBadgeNotifications(currentStreak, totalMinutes, sessions.filter(s => s.completed).length);
+      const { revoked, unlocked } = validateAndFixBadges(
+        totalMinutes, 
+        currentStreak, 
+        completedCount,
+        (n) => addNotification(n.type, n.title, n.message)
+      );
+      const removedNotifications = cleanUpInvalidBadgeNotifications(currentStreak, totalMinutes, completedCount);
       
       const messages: string[] = [];
-      if (revokedBadges.length > 0) messages.push(`更新勋章：${revokedBadges.join('、')}`);
+      if (revoked.length > 0) messages.push(`收回勋章：${revoked.join('、')}`);
+      if (unlocked.length > 0) messages.push(`新获得：${unlocked.join('、')}`);
       if (removedNotifications > 0) messages.push(`清理 ${removedNotifications} 条旧通知`);
       if (messages.length > 0) {
         addToast({ type: 'info', message: messages.join('，') });
       }
     }
-  }, [sessions, user, validateAndFixBadges, cleanUpInvalidBadgeNotifications, updateUser, addToast]);
+  }, [sessions, user, validateAndFixBadges, cleanUpInvalidBadgeNotifications, updateUser, addNotification, addToast]);
 
   const activePlan = plans.find(p => p.isActive);
   const membershipLevel = user ? getMembershipLevel(user.totalMeditationMinutes) : null;
@@ -280,31 +289,15 @@ export default function Dashboard({ addToast }: DashboardProps) {
 
       <motion.div variants={itemVariants} className="glass-card p-6">
         <h3 className="text-xl font-display font-semibold mb-4">最近记录</h3>
-        <div className="space-y-3 max-h-64 overflow-y-auto">
+        <div className="space-y-3 max-h-96 overflow-y-auto">
           {sessions.slice(0, 5).map((session, index) => (
-            <motion.div
+            <SessionItem
               key={session.id}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: index * 0.1 }}
-              className="flex items-center justify-between p-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-primary-500/20 flex items-center justify-center">
-                  <span className="text-lg">🧘</span>
-                </div>
-                <div>
-                  <p className="font-medium">{session.audioName}</p>
-                  <p className="text-white/50 text-sm">{session.sessionDate} · {session.startTime}</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="font-semibold text-primary-400">{session.durationMinutes}分钟</p>
-                {session.moodLevel && (
-                  <p className="text-lg">{getMoodEmoji(session.moodLevel)}</p>
-                )}
-              </div>
-            </motion.div>
+              session={session}
+              index={index}
+              isExpanded={expandedSessionId === session.id}
+              onToggle={() => setExpandedSessionId(expandedSessionId === session.id ? null : session.id)}
+            />
           ))}
           {sessions.length === 0 && (
             <p className="text-white/50 text-center py-8">还没有冥想记录</p>
@@ -414,11 +407,6 @@ function StatCard({
   );
 }
 
-function getMoodEmoji(level: number): string {
-  const emojis = ['😢', '😞', '😔', '😐', '🙂', '😊', '😄', '😁', '🤗', '✨'];
-  return emojis[Math.max(0, Math.min(9, level - 1))];
-}
-
 function getTimeAgo(dateStr: string): string {
   const now = new Date();
   const date = new Date(dateStr);
@@ -432,4 +420,102 @@ function getTimeAgo(dateStr: string): string {
   if (diffHours < 24) return `${diffHours}小时前`;
   if (diffDays < 7) return `${diffDays}天前`;
   return date.toLocaleDateString('zh-CN');
+}
+
+function SessionItem({
+  session,
+  index,
+  isExpanded,
+  onToggle
+}: {
+  session: MeditationSession;
+  index: number;
+  isExpanded: boolean;
+  onToggle: () => void;
+}) {
+  const hasReflection = !!(session.note || session.stressSource || (session.tags && session.tags.length > 0));
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: -20 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ delay: index * 0.1 }}
+      className="rounded-lg bg-white/5 hover:bg-white/10 transition-colors overflow-hidden"
+    >
+      <div
+        onClick={hasReflection ? onToggle : undefined}
+        className={`flex items-center justify-between p-3 ${hasReflection ? 'cursor-pointer' : ''}`}
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-primary-500/20 flex items-center justify-center">
+            <span className="text-lg">🧘</span>
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="font-medium">{session.audioName}</p>
+              {hasReflection && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-secondary-500/20 text-secondary-400">
+                  有复盘
+                </span>
+              )}
+            </div>
+            <p className="text-white/50 text-sm">{session.sessionDate} · {session.startTime}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="text-right">
+            <p className="font-semibold text-primary-400">{session.durationMinutes}分钟</p>
+            {session.moodLevel && (
+              <p className="text-lg">{getMoodEmoji(session.moodLevel)}</p>
+            )}
+          </div>
+          {hasReflection && (
+            <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
+              <svg className="w-4 h-4 text-white/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {hasReflection && isExpanded && (
+        <motion.div
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          className="px-3 pb-3"
+        >
+          <div className="p-3 rounded-lg bg-white/[0.03] border border-white/5 space-y-2">
+            {session.stressSource && (
+              <div className="flex items-start gap-2">
+                <span className="text-xs text-white/40 flex-shrink-0 mt-0.5">压力:</span>
+                <span className="text-xs text-accent-400 font-medium">{session.stressSource}</span>
+              </div>
+            )}
+            {session.tags && session.tags.length > 0 && (
+              <div className="flex items-start gap-2">
+                <span className="text-xs text-white/40 flex-shrink-0 mt-0.5">标签:</span>
+                <div className="flex flex-wrap gap-1">
+                  {session.tags.map(tag => (
+                    <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full bg-primary-500/15 text-primary-300 border border-primary-500/20">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {session.note && (
+              <div className="flex items-start gap-2">
+                <span className="text-xs text-white/40 flex-shrink-0 mt-0.5">备注:</span>
+                <p className="text-xs text-white/70 italic bg-white/[0.02] rounded p-2 flex-1">
+                  "{session.note}"
+                </p>
+              </div>
+            )}
+          </div>
+        </motion.div>
+      )}
+    </motion.div>
+  );
 }

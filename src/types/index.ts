@@ -96,7 +96,11 @@ export interface MonthlyReport {
   averageMood: number;
   moodTrend: { date: string; mood: number }[];
   badgesEarned: Badge[];
-  dailyBreakdown: { date: string; minutes: number }[];
+  dailyBreakdown: {
+    date: string;
+    minutes: number;
+    sessions: MeditationSession[];
+  }[];
 }
 
 export interface Notification {

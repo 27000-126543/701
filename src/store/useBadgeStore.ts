@@ -8,7 +8,12 @@ interface BadgeStore {
   badges: Badge[];
   initBadges: () => void;
   checkBadgeUnlock: (totalMinutes: number, currentStreak: number, sessionsCount: number) => Badge[];
-  validateAndFixBadges: (totalMinutes: number, currentStreak: number, sessionsCount: number) => string[];
+  validateAndFixBadges: (
+    totalMinutes: number, 
+    currentStreak: number, 
+    sessionsCount: number,
+    addNotification?: (n: Notification) => void
+  ) => { revoked: string[]; unlocked: string[] };
   unlockBadge: (badgeType: string, addNotification?: (n: Notification) => void) => Badge | null;
   getUnlockedBadges: () => Badge[];
   getLockedBadges: () => Badge[];
@@ -48,9 +53,10 @@ export const useBadgeStore = create<BadgeStore>()(
         return newlyUnlocked;
       },
 
-      validateAndFixBadges: (totalMinutes, currentStreak, sessionsCount) => {
+      validateAndFixBadges: (totalMinutes, currentStreak, sessionsCount, addNotification) => {
         const { badges } = get();
         const revokedBadgeNames: string[] = [];
+        const unlockedBadgeNames: string[] = [];
 
         const checkConditions: Record<string, boolean> = {
           'first_meditation': sessionsCount >= 1,
@@ -68,6 +74,25 @@ export const useBadgeStore = create<BadgeStore>()(
             revokedBadgeNames.push(badge.badgeName);
             return { ...badge, unlocked: false, earnedDate: undefined };
           }
+          if (!badge.unlocked && checkConditions[badge.badgeType] === true) {
+            hasChanges = true;
+            unlockedBadgeNames.push(badge.badgeName);
+            const today = new Date().toISOString().split('T')[0];
+
+            if (addNotification) {
+              addNotification({
+                id: generateId(),
+                userId: 'user_001',
+                type: 'badge',
+                title: '🎉 获得新勋章',
+                message: `恭喜你获得「${badge.badgeName}」勋章！${badge.description}`,
+                read: false,
+                createdAt: new Date().toISOString()
+              });
+            }
+
+            return { ...badge, unlocked: true, earnedDate: today };
+          }
           return badge;
         });
 
@@ -75,7 +100,7 @@ export const useBadgeStore = create<BadgeStore>()(
           set({ badges: updatedBadges });
         }
 
-        return revokedBadgeNames;
+        return { revoked: revokedBadgeNames, unlocked: unlockedBadgeNames };
       },
 
       unlockBadge: (badgeType, addNotification) => {
