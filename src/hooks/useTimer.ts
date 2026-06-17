@@ -11,6 +11,7 @@ interface UseTimerReturn {
   isPaused: boolean;
   remainingSeconds: number;
   totalSeconds: number;
+  elapsedSeconds: number;
   progress: number;
   start: (minutes?: number) => void;
   pause: () => void;
@@ -38,8 +39,10 @@ export function useTimer(options: UseTimerOptions = {}): UseTimerReturn {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }, []);
 
+  const elapsedSeconds = totalSeconds - remainingSeconds;
+
   const progress = totalSeconds > 0 
-    ? ((totalSeconds - remainingSeconds) / totalSeconds) * 100 
+    ? (elapsedSeconds / totalSeconds) * 100 
     : 0;
 
   const tick = useCallback(() => {
@@ -122,6 +125,7 @@ export function useTimer(options: UseTimerOptions = {}): UseTimerReturn {
     isPaused,
     remainingSeconds,
     totalSeconds,
+    elapsedSeconds,
     progress,
     start,
     pause,

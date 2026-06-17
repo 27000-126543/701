@@ -5,8 +5,10 @@ import {
   Timer,
   BarChart3,
   Award,
-  Users
+  Users,
+  Bell
 } from 'lucide-react';
+import { useNotificationStore } from '../../store/useNotificationStore';
 
 const navItems = [
   { path: '/', icon: Home, label: '首页' },
@@ -16,8 +18,13 @@ const navItems = [
   { path: '/community', icon: Users, label: '社区' }
 ];
 
-export default function BottomNav() {
+interface BottomNavProps {
+  onNotificationClick?: () => void;
+}
+
+export default function BottomNav({ onNotificationClick }: BottomNavProps) {
   const location = useLocation();
+  const unreadCount = useNotificationStore(state => state.getUnreadCount());
 
   return (
     <motion.nav
@@ -51,6 +58,18 @@ export default function BottomNav() {
             </NavLink>
           );
         })}
+        <button
+          onClick={onNotificationClick}
+          className="nav-item flex-1 relative"
+        >
+          <Bell size={22} />
+          <span className="text-xs font-medium">通知</span>
+          {unreadCount > 0 && (
+            <span className="absolute top-1 right-4 bg-danger-400 text-white text-xs font-bold w-4 h-4 flex items-center justify-center rounded-full">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
+        </button>
       </div>
     </motion.nav>
   );

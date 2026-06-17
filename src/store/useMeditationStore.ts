@@ -11,7 +11,7 @@ interface MeditationStore {
   currentSession: MeditationSession | null;
   initData: () => void;
   startSession: (duration: number, audio: AudioConfig) => { success: boolean; message?: string };
-  endSession: (moodLevel: number) => { success: boolean; message?: string; session?: MeditationSession };
+  endSession: (moodLevel: number, actualMinutes?: number) => { success: boolean; message?: string; session?: MeditationSession };
   createPlan: (dailyGoal: number) => { success: boolean; message?: string };
   updatePlan: (planId: string, data: Partial<MeditationPlan>) => void;
   calculateRecommendedMinutes: () => number;
@@ -61,7 +61,7 @@ export const useMeditationStore = create<MeditationStore>()(
         return { success: true };
       },
 
-      endSession: (moodLevel) => {
+      endSession: (moodLevel, actualMinutes) => {
         const validation = validateMoodLevel(moodLevel);
         if (!validation.valid) {
           return { success: false, message: validation.message };
@@ -72,9 +72,14 @@ export const useMeditationStore = create<MeditationStore>()(
           return { success: false, message: '没有进行中的冥想' };
         }
 
+        const finalDuration = actualMinutes !== undefined && actualMinutes > 0
+          ? Math.round(actualMinutes)
+          : currentSession.durationMinutes;
+
         const now = new Date();
         const completedSession: MeditationSession = {
           ...currentSession,
+          durationMinutes: finalDuration,
           endTime: now.toTimeString().split(' ')[0],
           completed: true,
           moodLevel

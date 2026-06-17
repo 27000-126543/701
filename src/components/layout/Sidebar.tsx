@@ -23,7 +23,11 @@ const navItems = [
   { path: '/community', icon: Users, label: '社区' }
 ];
 
-export default function Sidebar() {
+interface SidebarProps {
+  onNotificationClick?: () => void;
+}
+
+export default function Sidebar({ onNotificationClick }: SidebarProps) {
   const location = useLocation();
   const unreadCount = useNotificationStore(state => state.getUnreadCount());
 
@@ -77,11 +81,14 @@ export default function Sidebar() {
       </nav>
 
       <div className="p-4 border-t border-white/10 space-y-2">
-        <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:text-white hover:bg-white/10 transition-all duration-300 relative">
+        <button 
+          onClick={onNotificationClick}
+          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:text-white hover:bg-white/10 transition-all duration-300 relative"
+        >
           <Bell size={20} />
           <span className="font-medium">通知</span>
           {unreadCount > 0 && (
-            <span className="ml-auto bg-danger-400 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+            <span className="ml-auto bg-danger-400 text-white text-xs font-bold px-2 py-0.5 rounded-full animate-pulse">
               {unreadCount}
             </span>
           )}

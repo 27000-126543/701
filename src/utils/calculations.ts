@@ -108,32 +108,48 @@ export function calculateStreak(sessions: MeditationSession[]): { current: numbe
       .filter(s => s.completed)
       .map(s => s.sessionDate)
   );
-  
+
+  function getDateStr(date: Date): string {
+    return date.toISOString().split('T')[0];
+  }
+
+  const today = new Date();
+  const todayStr = getDateStr(today);
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = getDateStr(yesterday);
+
   let currentStreak = 0;
   let longestStreak = 0;
   let tempStreak = 0;
-  
-  const today = new Date();
+  let currentStreakStarted = false;
+
   for (let i = 0; i < 365; i++) {
     const checkDate = new Date(today);
     checkDate.setDate(checkDate.getDate() - i);
-    const dateStr = checkDate.toISOString().split('T')[0];
+    const dateStr = getDateStr(checkDate);
     
     if (completedDates.has(dateStr)) {
       tempStreak++;
-      if (i === 0) currentStreak = tempStreak;
       longestStreak = Math.max(longestStreak, tempStreak);
+      
+      if (i === 0 || (i === 1 && !completedDates.has(todayStr))) {
+        currentStreakStarted = true;
+      }
+      
+      if (currentStreakStarted) {
+        currentStreak = tempStreak;
+      }
     } else {
-      if (i === 0) {
-        const yesterday = new Date(today);
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = yesterday.toISOString().split('T')[0];
-        if (!completedDates.has(yesterdayStr)) {
-          currentStreak = 0;
-        }
+      if (currentStreakStarted) {
+        currentStreakStarted = false;
       }
       tempStreak = 0;
     }
+  }
+  
+  if (!completedDates.has(todayStr) && !completedDates.has(yesterdayStr)) {
+    currentStreak = 0;
   }
   
   return { current: currentStreak, longest: longestStreak };

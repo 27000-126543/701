@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Play, Flame, Target, Clock, TrendingUp, Award, Crown, ArrowRight } from 'lucide-react';
+import { Play, Flame, Target, Clock, TrendingUp, Award, Crown, ArrowRight, Heart, MessageCircle, TrendingUp as TrendingUpIcon } from 'lucide-react';
 import { useUserStore } from '../../store/useUserStore';
 import { useMeditationStore } from '../../store/useMeditationStore';
 import { useBadgeStore } from '../../store/useBadgeStore';
+import { useCommunityStore } from '../../store/useCommunityStore';
 import { formatDuration, getMembershipLevel } from '../../utils/calculations';
 import type { ToastMessage } from '../../types';
 
@@ -26,14 +27,25 @@ export default function Dashboard({ addToast }: DashboardProps) {
 
   const [recommendedMinutes, setRecommendedMinutes] = useState(15);
   const [todayMinutes, setTodayMinutes] = useState(0);
+  const posts = useCommunityStore(state => state.posts);
+  const initPosts = useCommunityStore(state => state.initPosts);
+  const likePost = useCommunityStore(state => state.likePost);
+  const getHotPosts = useCommunityStore(state => state.getHotPosts);
+  const recalculateHotScores = useCommunityStore(state => state.recalculateHotScores);
 
   useEffect(() => {
     initUser();
     initData();
     initBadges();
+    initPosts();
+    recalculateHotScores();
     
     (window as any).__userStore = useUserStore;
-  }, [initUser, initData, initBadges]);
+  }, [initUser, initData, initBadges, initPosts, recalculateHotScores]);
+
+  const hotPosts = useMemo(() => {
+    return getHotPosts().slice(0, 3);
+  }, [posts, getHotPosts]);
 
   useEffect(() => {
     const activePlan = plans.find(p => p.isActive);
@@ -270,6 +282,75 @@ export default function Dashboard({ addToast }: DashboardProps) {
           )}
         </div>
       </motion.div>
+
+      <motion.div variants={itemVariants} className="glass-card p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xl font-display font-semibold flex items-center gap-2">
+            <TrendingUpIcon size={20} className="text-accent-400" />
+            社区热门心得
+          </h3>
+          <button
+            onClick={() => navigate('/community')}
+            className="text-primary-400 text-sm flex items-center gap-1 hover:text-primary-300"
+          >
+            查看更多 <ArrowRight size={16} />
+          </button>
+        </div>
+        
+        <div className="space-y-3">
+          {hotPosts.map((post, index) => (
+            <motion.div
+              key={post.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.1 }}
+              className="p-4 rounded-lg bg-white/5 hover:bg-white/10 transition-colors cursor-pointer"
+              onClick={() => navigate('/community')}
+            >
+              <div className="flex items-start gap-3">
+                <img
+                  src={post.userAvatar}
+                  alt={post.userName}
+                  className="w-10 h-10 rounded-full flex-shrink-0"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="font-medium text-sm">{post.userName}</p>
+                    {post.isHot && (
+                      <span className="px-2 py-0.5 text-xs rounded-full bg-accent-500/20 text-accent-400">
+                        🔥 热门
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-white/80 text-sm line-clamp-2">{post.content}</p>
+                  <div className="flex items-center gap-4 mt-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        likePost(post.id);
+                      }}
+                      className={`flex items-center gap-1 text-xs ${post.liked ? 'text-red-400' : 'text-white/50'} hover:text-red-400 transition-colors`}
+                    >
+                      <Heart size={14} fill={post.liked ? 'currentColor' : 'none'} />
+                      <span>{post.likesCount}</span>
+                    </button>
+                    <span className="flex items-center gap-1 text-xs text-white/50">
+                      <MessageCircle size={14} />
+                      <span>{post.commentsCount}</span>
+                    </span>
+                    <span className="text-xs text-white/40 ml-auto">
+                      {getTimeAgo(post.createdAt)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          ))}
+          {hotPosts.length === 0 && (
+            <p className="text-white/50 text-center py-8">暂无热门心得</p>
+          )}
+        </div>
+      </motion.div>
     </motion.div>
   );
 }
@@ -307,4 +388,19 @@ function StatCard({
 function getMoodEmoji(level: number): string {
   const emojis = ['😢', '😞', '😔', '😐', '🙂', '😊', '😄', '😁', '🤗', '✨'];
   return emojis[Math.max(0, Math.min(9, level - 1))];
+}
+
+function getTimeAgo(dateStr: string): string {
+  const now = new Date();
+  const date = new Date(dateStr);
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffMins < 1) return '刚刚';
+  if (diffMins < 60) return `${diffMins}分钟前`;
+  if (diffHours < 24) return `${diffHours}小时前`;
+  if (diffDays < 7) return `${diffDays}天前`;
+  return date.toLocaleDateString('zh-CN');
 }

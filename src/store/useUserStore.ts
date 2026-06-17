@@ -4,13 +4,20 @@ import type { User } from '../types';
 import { getMembershipLevel, generateId, calculateStreak } from '../utils/calculations';
 import { mockUser } from '../utils/mockData';
 
+interface MembershipUpgradeResult {
+  upgraded: boolean;
+  oldLevel: string;
+  newLevel: string;
+  newLevelName: string;
+}
+
 interface UserStore {
   user: User | null;
   initUser: () => void;
   updateUser: (data: Partial<User>) => void;
   calculateMembershipLevel: () => void;
-  checkStreakContinuity: (sessions: any[]) => void;
-  addMeditationMinutes: (minutes: number) => void;
+  checkStreakContinuity: (sessions: any[]) => { wasBroken: boolean; newStreak: number };
+  addMeditationMinutes: (minutes: number) => MembershipUpgradeResult;
 }
 
 export const useUserStore = create<UserStore>()(
@@ -45,8 +52,12 @@ export const useUserStore = create<UserStore>()(
 
       checkStreakContinuity: (sessions) => {
         const { user } = get();
+        const oldStreak = user?.currentStreak || 0;
+        
         if (user && sessions.length > 0) {
           const { current, longest } = calculateStreak(sessions);
+          const wasBroken = oldStreak > 0 && current < oldStreak && current === 1;
+          
           set((state) => ({
             user: state.user 
               ? { 
@@ -56,11 +67,17 @@ export const useUserStore = create<UserStore>()(
                 } 
               : null
           }));
+          
+          return { wasBroken, newStreak: current };
         }
+        
+        return { wasBroken: false, newStreak: 0 };
       },
 
       addMeditationMinutes: (minutes) => {
         const { user } = get();
+        const oldLevel = user?.membershipLevel || '普通用户';
+        
         if (user) {
           const newTotal = user.totalMeditationMinutes + minutes;
           const level = getMembershipLevel(newTotal);
@@ -76,7 +93,22 @@ export const useUserStore = create<UserStore>()(
                 } 
               : null
           }));
+          
+          const upgraded = oldLevel !== level.level && level.level !== '普通用户';
+          return {
+            upgraded,
+            oldLevel,
+            newLevel: level.level,
+            newLevelName: level.name
+          };
         }
+        
+        return {
+          upgraded: false,
+          oldLevel: oldLevel,
+          newLevel: oldLevel,
+          newLevelName: ''
+        };
       }
     }),
     {

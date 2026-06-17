@@ -111,26 +111,24 @@ export default function Meditation({ addToast }: MeditationProps) {
       return;
     }
 
-    const actualDuration = timer.isRunning || timer.isPaused 
-      ? Math.ceil((timer.totalSeconds - timer.remainingSeconds) / 60)
-      : duration;
+    const actualDuration = Math.max(1, Math.ceil(timer.elapsedSeconds / 60));
 
-    const result = endSession(selectedMood);
+    const result = endSession(selectedMood, actualDuration);
     
     if (!result.success) {
       addToast({ type: 'error', message: result.message || '保存失败' });
       return;
     }
 
-    addMeditationMinutes(actualDuration);
-    checkStreakContinuity([...sessions, result.session!]);
+    const upgradeResult = addMeditationMinutes(actualDuration);
+    const streakResult = checkStreakContinuity([...sessions, result.session!]);
+
+    const updatedUser = useUserStore.getState().user;
+    const currentStreak = updatedUser?.currentStreak || 0;
 
     if (user) {
       const newTotal = user.totalMeditationMinutes + actualDuration;
       const newSessionsCount = sessions.length + 1;
-      
-      const updatedUser = useUserStore.getState().user;
-      const currentStreak = updatedUser?.currentStreak || 0;
       
       const newBadges = checkBadgeUnlock(newTotal, currentStreak, newSessionsCount);
       newBadges.forEach(badge => {
@@ -138,13 +136,28 @@ export default function Meditation({ addToast }: MeditationProps) {
         addToast({ type: 'success', message: `🎉 获得新勋章：${badge.badgeName}` });
       });
 
-      if (user.currentStreak > 0 && currentStreak === 0 && sessions.length > 0) {
+      if (upgradeResult.upgraded) {
+        addNotification(
+          'membership',
+          '🎊 恭喜升级',
+          `恭喜你升级为「${upgradeResult.newLevelName}」！解锁更多专属权益，继续加油！`
+        );
+        addToast({ type: 'success', message: `🎊 恭喜升级为${upgradeResult.newLevelName}！` });
+      }
+
+      if (streakResult.wasBroken && currentStreak === 1) {
         addNotification(
           'encouragement',
-          '💪 不要放弃',
-          '打卡中断了，不过没关系，今天重新开始，你可以的！'
+          '💪 重新出发',
+          '欢迎回来！虽然之前中断了，但今天你又迈出了一步，坚持就是胜利！'
         );
-        addToast({ type: 'info', message: '打卡中断了，今天重新开始吧！' });
+        addToast({ type: 'info', message: '欢迎回来，今天重新开始打卡！' });
+      } else if (currentStreak > 0 && currentStreak % 7 === 0 && currentStreak > 0) {
+        addNotification(
+          'encouragement',
+          '🔥 太棒了',
+          `你已经连续打卡 ${currentStreak} 天了，继续保持这个势头！`
+        );
       }
     }
 
@@ -540,9 +553,7 @@ export default function Meditation({ addToast }: MeditationProps) {
                 太棒了！
               </h3>
               <p className="text-white/60 mb-6">
-                你完成了 {timer.isRunning || timer.isPaused 
-                  ? Math.ceil((timer.totalSeconds - timer.remainingSeconds) / 60)
-                  : duration} 分钟的冥想
+                你完成了 {Math.max(1, Math.ceil(timer.elapsedSeconds / 60))} 分钟的冥想
               </p>
               
               <MoodSelector
