@@ -1,6 +1,11 @@
+import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Bell, CheckCheck, Trash2, Award, Crown, Heart, AlertCircle } from 'lucide-react';
 import { useNotificationStore } from '../../store/useNotificationStore';
+import { useMeditationStore } from '../../store/useMeditationStore';
+import { useBadgeStore } from '../../store/useBadgeStore';
+import { useUserStore } from '../../store/useUserStore';
+import { calculateStreak } from '../../utils/calculations';
 import type { Notification } from '../../types';
 
 interface NotificationCenterProps {
@@ -15,8 +20,33 @@ export default function NotificationCenter({ isOpen, onClose }: NotificationCent
   const removeNotification = useNotificationStore(state => state.removeNotification);
   const clearAll = useNotificationStore(state => state.clearAll);
   const getUnreadCount = useNotificationStore(state => state.getUnreadCount);
+  const cleanUpInvalidBadgeNotifications = useNotificationStore(state => state.cleanUpInvalidBadgeNotifications);
+
+  const sessions = useMeditationStore(state => state.sessions);
+  const validateAndFixBadges = useBadgeStore(state => state.validateAndFixBadges);
+  const user = useUserStore(state => state.user);
+  const updateUser = useUserStore(state => state.updateUser);
 
   const unreadCount = getUnreadCount();
+
+  useEffect(() => {
+    if (isOpen && sessions.length > 0) {
+      const { current: currentStreak, longest: longestStreak } = calculateStreak(sessions);
+      const totalMinutes = sessions.filter(s => s.completed).reduce((sum, s) => sum + s.durationMinutes, 0);
+      const sessionsCount = sessions.filter(s => s.completed).length;
+
+      if (user && (user.currentStreak !== currentStreak || user.longestStreak !== longestStreak || user.totalMeditationMinutes !== totalMinutes)) {
+        updateUser({
+          currentStreak,
+          longestStreak: Math.max(user.longestStreak, longestStreak),
+          totalMeditationMinutes: totalMinutes
+        });
+      }
+
+      validateAndFixBadges(totalMinutes, currentStreak, sessionsCount);
+      cleanUpInvalidBadgeNotifications(currentStreak, totalMinutes, sessionsCount);
+    }
+  }, [isOpen, sessions, user, updateUser, validateAndFixBadges, cleanUpInvalidBadgeNotifications]);
 
   const getIcon = (type: Notification['type']) => {
     switch (type) {

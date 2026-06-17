@@ -4,7 +4,8 @@ import { Award, Flame, ChevronLeft, ChevronRight, Lock } from 'lucide-react';
 import { useUserStore } from '../../store/useUserStore';
 import { useMeditationStore } from '../../store/useMeditationStore';
 import { useBadgeStore } from '../../store/useBadgeStore';
-import { generateCalendarData, getMoodEmoji, getMoodColor } from '../../utils/calculations';
+import { useNotificationStore } from '../../store/useNotificationStore';
+import { generateCalendarData, getMoodEmoji, getMoodColor, calculateStreak } from '../../utils/calculations';
 import type { CalendarDay, ToastMessage } from '../../types';
 
 interface BadgesProps {
@@ -21,6 +22,8 @@ export default function Badges({ addToast }: BadgesProps) {
   const getUnlockedBadges = useBadgeStore(state => state.getUnlockedBadges);
   const getLockedBadges = useBadgeStore(state => state.getLockedBadges);
   const validateAndFixBadges = useBadgeStore(state => state.validateAndFixBadges);
+  const cleanUpInvalidBadgeNotifications = useNotificationStore(state => state.cleanUpInvalidBadgeNotifications);
+  const updateUser = useUserStore(state => state.updateUser);
 
   const [currentDate, setCurrentDate] = useState({
     year: new Date().getFullYear(),
@@ -35,14 +38,28 @@ export default function Badges({ addToast }: BadgesProps) {
   }, [initUser, initData, initBadges]);
 
   useEffect(() => {
-    if (user && sessions.length > 0) {
-      validateAndFixBadges(
-        user.totalMeditationMinutes,
-        user.currentStreak,
-        sessions.length
-      );
+    if (sessions.length > 0) {
+      const { current: currentStreak, longest: longestStreak } = calculateStreak(sessions);
+      const totalMinutes = sessions.filter(s => s.completed).reduce((sum, s) => sum + s.durationMinutes, 0);
+      const sessionsCount = sessions.filter(s => s.completed).length;
+
+      if (user && (user.currentStreak !== currentStreak || user.longestStreak !== longestStreak || user.totalMeditationMinutes !== totalMinutes)) {
+        updateUser({
+          currentStreak,
+          longestStreak: Math.max(user.longestStreak, longestStreak),
+          totalMeditationMinutes: totalMinutes
+        });
+      }
+
+      validateAndFixBadges(totalMinutes, currentStreak, sessionsCount);
+      cleanUpInvalidBadgeNotifications(currentStreak, totalMinutes, sessionsCount);
     }
-  }, [user, sessions, validateAndFixBadges]);
+  }, [sessions, user, validateAndFixBadges, cleanUpInvalidBadgeNotifications, updateUser]);
+
+  const { realtimeStreak, realtimeLongest } = useMemo(() => {
+    const { current, longest } = calculateStreak(sessions);
+    return { realtimeStreak: current, realtimeLongest: longest };
+  }, [sessions]);
 
   const calendarData = useMemo(() => {
     return generateCalendarData(sessions, currentDate.year, currentDate.month);
@@ -107,12 +124,12 @@ export default function Badges({ addToast }: BadgesProps) {
       <motion.div variants={itemVariants} className="grid grid-cols-3 gap-4">
         <div className="glass-card p-4 text-center">
           <div className="text-3xl mb-2">🔥</div>
-          <p className="text-2xl font-bold text-accent-400">{user.currentStreak}</p>
+          <p className="text-2xl font-bold text-accent-400">{realtimeStreak}</p>
           <p className="text-white/60 text-sm">连续打卡</p>
         </div>
         <div className="glass-card p-4 text-center">
           <div className="text-3xl mb-2">🏆</div>
-          <p className="text-2xl font-bold text-primary-400">{user.longestStreak}</p>
+          <p className="text-2xl font-bold text-primary-400">{realtimeLongest}</p>
           <p className="text-white/60 text-sm">最长连续</p>
         </div>
         <div className="glass-card p-4 text-center">
@@ -159,27 +176,45 @@ export default function Badges({ addToast }: BadgesProps) {
           {calendarData.map((day, index) => (
             <motion.div
               key={index}
-              whileHover={{ scale: day.inCurrentMonth ? 1.1 : 1 }}
+              whileHover={{ scale: day.inCurrentMonth && day.hasMeditation ? 1.08 : 1 }}
               onClick={() => day.inCurrentMonth && setSelectedDay(day)}
               className={`
-                aspect-square rounded-lg flex flex-col items-center justify-center text-sm cursor-pointer
-                transition-all relative
-                ${!day.inCurrentMonth ? 'opacity-30' : ''}
-                ${day.isToday ? 'ring-2 ring-primary-400' : ''}
-                ${day.hasMeditation
-                  ? 'bg-gradient-to-br from-secondary-500/30 to-secondary-600/30 border border-secondary-400/50'
-                  : 'bg-white/5 hover:bg-white/10'
+                aspect-square rounded-lg flex flex-col items-center justify-center cursor-pointer transition-all duration-200 text-sm relative overflow-hidden
+                ${!day.inCurrentMonth ? 'text-white/20' : ''}
+                ${day.isToday 
+                  ? 'ring-2 ring-primary-400 ring-offset-1 ring-offset-slate-900' 
+                  : ''
                 }
+                ${day.intensity === 0 ? 'bg-white/[0.02]' : ''}
+                ${day.intensity === 1 ? 'bg-primary-500/10' : ''}
+                ${day.intensity === 2 ? 'bg-primary-500/20' : ''}
+                ${day.intensity === 3 ? 'bg-primary-500/30' : ''}
+                ${day.intensity >= 4 ? 'bg-primary-500/40' : ''}
+                ${day.hasMeditation && day.inCurrentMonth ? 'hover:scale-105 hover:bg-primary-500/50' : 'hover:bg-white/5'}
               `}
+              title={day.hasMeditation ? `${day.durationMinutes} 分钟，${day.sessionCount} 次` : undefined}
             >
               <span className={day.isToday ? 'text-primary-400 font-bold' : ''}>
                 {new Date(day.date).getDate()}
               </span>
-              {day.hasMeditation && day.moodLevel && (
-                <span className="text-xs mt-0.5">{getMoodEmoji(day.moodLevel)}</span>
+              {day.hasMeditation && (
+                <div className="flex flex-col items-center mt-0.5">
+                  {day.avgMood && <span className="text-[10px]">{getMoodEmoji(Math.round(day.avgMood))}</span>}
+                  {day.sessionCount > 1 && <span className="text-[10px] text-white/60">×{day.sessionCount}</span>}
+                </div>
               )}
             </motion.div>
           ))}
+        </div>
+
+        <div className="mt-4 flex items-center justify-center gap-2 text-xs text-white/50">
+          <span>少</span>
+          <div className="w-4 h-4 rounded bg-white/[0.02]" />
+          <div className="w-4 h-4 rounded bg-primary-500/10" />
+          <div className="w-4 h-4 rounded bg-primary-500/20" />
+          <div className="w-4 h-4 rounded bg-primary-500/30" />
+          <div className="w-4 h-4 rounded bg-primary-500/40" />
+          <span>多</span>
         </div>
 
         {selectedDay && (
@@ -188,33 +223,75 @@ export default function Badges({ addToast }: BadgesProps) {
             animate={{ opacity: 1, y: 0 }}
             className="mt-4 p-4 bg-white/5 rounded-lg border border-white/10"
           >
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-3">
               <div>
                 <p className="font-semibold">{selectedDay.date}</p>
                 {selectedDay.hasMeditation ? (
-                  <div className="mt-2 space-y-1">
-                    <p className="text-white/70">
-                      冥想时长: <span className="text-primary-400">{selectedDay.durationMinutes}分钟</span>
+                  <div className="mt-1 space-y-1">
+                    <p className="text-white/70 text-sm">
+                      共 <span className="text-primary-400 font-medium">{selectedDay.sessionCount} 次</span> 冥想
+                      · 合计 <span className="text-primary-400 font-medium">{selectedDay.durationMinutes} 分钟</span>
                     </p>
-                    {selectedDay.moodLevel && (
-                      <p className="text-white/70">
-                        情绪: <span style={{ color: getMoodColor(selectedDay.moodLevel) }}>
-                          {getMoodEmoji(selectedDay.moodLevel)} {selectedDay.moodLevel}/10
+                    {selectedDay.avgMood && (
+                      <p className="text-white/70 text-sm">
+                        平均情绪: <span style={{ color: getMoodColor(Math.round(selectedDay.avgMood)) }}>
+                          {getMoodEmoji(Math.round(selectedDay.avgMood))} {selectedDay.avgMood.toFixed(1)}/10
                         </span>
                       </p>
                     )}
                   </div>
                 ) : (
-                  <p className="text-white/50 mt-2">当天没有冥想记录</p>
+                  <p className="text-white/50 mt-1 text-sm">当天没有冥想记录</p>
                 )}
               </div>
               <button
                 onClick={() => setSelectedDay(null)}
-                className="text-white/50 hover:text-white"
+                className="text-white/50 hover:text-white p-1"
               >
                 ✕
               </button>
             </div>
+
+            {selectedDay.sessions && selectedDay.sessions.length > 0 && (
+              <div className="mt-3 space-y-2 max-h-64 overflow-y-auto">
+                {selectedDay.sessions.map(session => (
+                  <div key={session.id} className="p-3 rounded-lg bg-white/[0.03] border border-white/5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">🧘</span>
+                        <div>
+                          <p className="font-medium text-sm">{session.audioName}</p>
+                          <p className="text-xs text-white/50">{session.startTime} - {session.endTime}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-primary-400 font-semibold text-sm">{session.durationMinutes}分钟</p>
+                        {session.moodLevel && <span className="text-sm">{getMoodEmoji(session.moodLevel)}</span>}
+                      </div>
+                    </div>
+                    {(session.stressSource || (session.tags && session.tags.length > 0) || session.note) && (
+                      <div className="mt-2 pt-2 border-t border-white/5 space-y-1">
+                        {session.stressSource && (
+                          <p className="text-xs text-white/60">压力来源: <span className="text-accent-400">{session.stressSource}</span></p>
+                        )}
+                        {session.tags && session.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {session.tags.map(tag => (
+                              <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full bg-primary-500/20 text-primary-300">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {session.note && (
+                          <p className="text-xs text-white/60 italic">"{session.note}"</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </motion.div>
         )}
       </motion.div>

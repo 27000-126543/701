@@ -5,8 +5,9 @@ import { Play, Flame, Target, Clock, TrendingUp, Award, Crown, ArrowRight, Heart
 import { useUserStore } from '../../store/useUserStore';
 import { useMeditationStore } from '../../store/useMeditationStore';
 import { useBadgeStore } from '../../store/useBadgeStore';
+import { useNotificationStore } from '../../store/useNotificationStore';
 import { useCommunityStore } from '../../store/useCommunityStore';
-import { formatDuration, getMembershipLevel } from '../../utils/calculations';
+import { formatDuration, getMembershipLevel, calculateStreak } from '../../utils/calculations';
 import type { ToastMessage } from '../../types';
 
 interface DashboardProps {
@@ -25,6 +26,8 @@ export default function Dashboard({ addToast }: DashboardProps) {
   const getTodaySessions = useMeditationStore(state => state.getTodaySessions);
   const getUnlockedBadges = useBadgeStore(state => state.getUnlockedBadges);
   const validateAndFixBadges = useBadgeStore(state => state.validateAndFixBadges);
+  const cleanUpInvalidBadgeNotifications = useNotificationStore(state => state.cleanUpInvalidBadgeNotifications);
+  const updateUser = useUserStore(state => state.updateUser);
 
   const [recommendedMinutes, setRecommendedMinutes] = useState(15);
   const [todayMinutes, setTodayMinutes] = useState(0);
@@ -64,17 +67,29 @@ export default function Dashboard({ addToast }: DashboardProps) {
   }, []);
 
   useEffect(() => {
-    if (user && sessions.length > 0) {
-      const revoked = validateAndFixBadges(
-        user.totalMeditationMinutes,
-        user.currentStreak,
-        sessions.length
-      );
-      if (revoked.length > 0) {
-        addToast({ type: 'info', message: `已更新勋章状态：${revoked.join('、')}` });
+    if (sessions.length > 0) {
+      const { current: currentStreak, longest: longestStreak } = calculateStreak(sessions);
+      const totalMinutes = sessions.filter(s => s.completed).reduce((sum, s) => sum + s.durationMinutes, 0);
+
+      if (user && (user.currentStreak !== currentStreak || user.longestStreak !== longestStreak || user.totalMeditationMinutes !== totalMinutes)) {
+        updateUser({
+          currentStreak,
+          longestStreak: Math.max(user.longestStreak, longestStreak),
+          totalMeditationMinutes: totalMinutes
+        });
+      }
+
+      const revokedBadges = validateAndFixBadges(totalMinutes, currentStreak, sessions.filter(s => s.completed).length);
+      const removedNotifications = cleanUpInvalidBadgeNotifications(currentStreak, totalMinutes, sessions.filter(s => s.completed).length);
+      
+      const messages: string[] = [];
+      if (revokedBadges.length > 0) messages.push(`更新勋章：${revokedBadges.join('、')}`);
+      if (removedNotifications > 0) messages.push(`清理 ${removedNotifications} 条旧通知`);
+      if (messages.length > 0) {
+        addToast({ type: 'info', message: messages.join('，') });
       }
     }
-  }, [user, sessions, validateAndFixBadges, addToast]);
+  }, [sessions, user, validateAndFixBadges, cleanUpInvalidBadgeNotifications, updateUser, addToast]);
 
   const activePlan = plans.find(p => p.isActive);
   const membershipLevel = user ? getMembershipLevel(user.totalMeditationMinutes) : null;

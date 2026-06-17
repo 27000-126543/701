@@ -129,7 +129,10 @@ export interface CalendarDay {
   date: string;
   hasMeditation: boolean;
   durationMinutes: number;
-  moodLevel?: number;
+  sessionCount: number;
+  avgMood?: number;
+  sessions?: MeditationSession[];
+  intensity: 0 | 1 | 2 | 3 | 4;
   isToday: boolean;
   inCurrentMonth: boolean;
 }

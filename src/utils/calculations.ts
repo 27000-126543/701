@@ -184,19 +184,147 @@ export function getMoodColor(level: number): string {
   return '#f87171';
 }
 
+function getIntensity(minutes: number): 0 | 1 | 2 | 3 | 4 {
+  if (minutes <= 0) return 0;
+  if (minutes < 15) return 1;
+  if (minutes < 30) return 2;
+  if (minutes < 60) return 3;
+  return 4;
+}
+
+export interface HabitInsights {
+  timeSlotDistribution: { slot: string; count: number; label: string }[];
+  mostFrequentSlot: string;
+  avgMoodChange: number;
+  mostInterruptedWeekday: { day: string; count: number } | null;
+  weekdayBreakdown: { day: string; count: number; totalMinutes: number }[];
+}
+
+export function getHabitInsights(sessions: MeditationSession[], days: number = 30): HabitInsights {
+  const today = new Date();
+  const cutoff = new Date(today.getTime() - days * 24 * 60 * 60 * 1000);
+  const cutoffStr = cutoff.toISOString().split('T')[0];
+  
+  const recentSessions = sessions.filter(s => s.completed && s.sessionDate >= cutoffStr);
+  
+  const timeSlots = [
+    { key: 'early', start: 5, end: 8, label: '清晨 (5-8)' },
+    { key: 'morning', start: 8, end: 12, label: '上午 (8-12)' },
+    { key: 'afternoon', start: 12, end: 18, label: '下午 (12-18)' },
+    { key: 'evening', start: 18, end: 22, label: '晚间 (18-22)' },
+    { key: 'night', start: 22, end: 26, label: '深夜 (22-2)' }
+  ];
+
+  const slotCounts: Record<string, number> = {};
+  timeSlots.forEach(s => slotCounts[s.key] = 0);
+
+  const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  const weekdayCounts: Record<string, number> = {};
+  const weekdayMinutes: Record<string, number> = {};
+  weekdays.forEach(d => {
+    weekdayCounts[d] = 0;
+    weekdayMinutes[d] = 0;
+  });
+
+  const sortedSessions = [...recentSessions].sort((a, b) => 
+    new Date(a.sessionDate).getTime() - new Date(b.sessionDate).getTime()
+  );
+
+  const dailyMoods: Record<string, number[]> = {};
+  let firstMood = 0;
+  let lastMood = 0;
+  let moodCount = 0;
+
+  recentSessions.forEach(session => {
+    if (session.startTime) {
+      const hour = parseInt(session.startTime.split(':')[0], 10);
+      for (const slot of timeSlots) {
+        if (hour >= slot.start && hour < slot.end) {
+          slotCounts[slot.key]++;
+          break;
+        }
+      }
+    }
+
+    const date = new Date(session.sessionDate);
+    const weekday = weekdays[date.getDay()];
+    weekdayCounts[weekday]++;
+    weekdayMinutes[weekday] += session.durationMinutes;
+
+    if (session.moodLevel) {
+      if (!dailyMoods[session.sessionDate]) {
+        dailyMoods[session.sessionDate] = [];
+      }
+      dailyMoods[session.sessionDate].push(session.moodLevel);
+      moodCount++;
+    }
+  });
+
+  const moodDates = Object.keys(dailyMoods).sort();
+  if (moodDates.length >= 2) {
+    firstMood = dailyMoods[moodDates[0]].reduce((a, b) => a + b, 0) / dailyMoods[moodDates[0]].length;
+    lastMood = dailyMoods[moodDates[moodDates.length - 1]].reduce((a, b) => a + b, 0) / dailyMoods[moodDates[moodDates.length - 1]].length;
+  }
+
+  const timeSlotDistribution = timeSlots.map(s => ({
+    slot: s.key,
+    count: slotCounts[s.key],
+    label: s.label
+  }));
+
+  const mostFrequent = timeSlotDistribution.reduce((max, cur) => cur.count > max.count ? cur : max, timeSlotDistribution[0]);
+
+  const allDays = new Set<string>();
+  for (let i = 0; i < days; i++) {
+    const d = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
+    allDays.add(weekdays[d.getDay()]);
+  }
+
+  let mostInterrupted: { day: string; count: number } | null = null;
+  weekdays.forEach(day => {
+    const expectedWeeks = Math.ceil(days / 7);
+    const interrupted = Math.max(0, expectedWeeks - weekdayCounts[day]);
+    if (interrupted > 0 && (!mostInterrupted || interrupted > mostInterrupted.count)) {
+      mostInterrupted = { day, count: interrupted };
+    }
+  });
+
+  const weekdayBreakdown = weekdays.map(day => ({
+    day,
+    count: weekdayCounts[day],
+    totalMinutes: weekdayMinutes[day]
+  }));
+
+  return {
+    timeSlotDistribution,
+    mostFrequentSlot: mostFrequent.count > 0 ? mostFrequent.label : '暂无数据',
+    avgMoodChange: moodCount >= 2 ? Number((lastMood - firstMood).toFixed(1)) : 0,
+    mostInterruptedWeekday: mostInterrupted,
+    weekdayBreakdown
+  };
+}
+
 export function generateCalendarData(
   sessions: MeditationSession[],
   year: number,
   month: number
 ): CalendarDay[] {
   const completedSessions = sessions.filter(s => s.completed);
-  const sessionMap = new Map<string, { duration: number; mood: number }>();
+  const sessionMap = new Map<string, { duration: number; moods: number[]; sessions: MeditationSession[] }>();
   
   completedSessions.forEach(session => {
     const existing = sessionMap.get(session.sessionDate);
-    const duration = (existing?.duration || 0) + session.durationMinutes;
-    const mood = session.moodLevel || existing?.mood || 0;
-    sessionMap.set(session.sessionDate, { duration, mood });
+    if (existing) {
+      existing.duration += session.durationMinutes;
+      if (session.moodLevel) existing.moods.push(session.moodLevel);
+      existing.sessions.push(session);
+    } else {
+      sessionMap.set(session.sessionDate, {
+        duration: session.durationMinutes,
+        moods: session.moodLevel ? [session.moodLevel] : [],
+        sessions: [session]
+      });
+    }
   });
   
   const firstDay = new Date(year, month - 1, 1);
@@ -206,53 +334,47 @@ export function generateCalendarData(
   
   const calendarDays: CalendarDay[] = [];
   const today = new Date().toISOString().split('T')[0];
+
+  function buildDay(dateStr: string, inCurrentMonth: boolean): CalendarDay {
+    const data = sessionMap.get(dateStr);
+    const hasMeditation = !!data;
+    const durationMinutes = data?.duration || 0;
+    const avgMood = data && data.moods.length > 0 
+      ? data.moods.reduce((a, b) => a + b, 0) / data.moods.length 
+      : undefined;
+    
+    return {
+      date: dateStr,
+      hasMeditation,
+      durationMinutes,
+      sessionCount: data?.sessions.length || 0,
+      avgMood,
+      sessions: data?.sessions,
+      intensity: getIntensity(durationMinutes),
+      isToday: dateStr === today,
+      inCurrentMonth
+    };
+  }
   
   const prevMonthLastDay = new Date(year, month - 1, 0).getDate();
   for (let i = startDayOfWeek - 1; i >= 0; i--) {
     const day = prevMonthLastDay - i;
     const date = new Date(year, month - 2, day);
     const dateStr = date.toISOString().split('T')[0];
-    const sessionData = sessionMap.get(dateStr);
-    
-    calendarDays.push({
-      date: dateStr,
-      hasMeditation: !!sessionData,
-      durationMinutes: sessionData?.duration || 0,
-      moodLevel: sessionData?.mood,
-      isToday: dateStr === today,
-      inCurrentMonth: false
-    });
+    calendarDays.push(buildDay(dateStr, false));
   }
   
   for (let day = 1; day <= daysInMonth; day++) {
     const date = new Date(year, month - 1, day);
     const dateStr = date.toISOString().split('T')[0];
-    const sessionData = sessionMap.get(dateStr);
-    
-    calendarDays.push({
-      date: dateStr,
-      hasMeditation: !!sessionData,
-      durationMinutes: sessionData?.duration || 0,
-      moodLevel: sessionData?.mood,
-      isToday: dateStr === today,
-      inCurrentMonth: true
-    });
+    calendarDays.push(buildDay(dateStr, true));
   }
   
   const remainingDays = 42 - calendarDays.length;
   for (let day = 1; day <= remainingDays; day++) {
     const date = new Date(year, month, day);
     const dateStr = date.toISOString().split('T')[0];
-    const sessionData = sessionMap.get(dateStr);
-    
-    calendarDays.push({
-      date: dateStr,
-      hasMeditation: !!sessionData,
-      durationMinutes: sessionData?.duration || 0,
-      moodLevel: sessionData?.mood,
-      isToday: dateStr === today,
-      inCurrentMonth: false
-    });
+    calendarDays.push(buildDay(dateStr, false));
   }
   
   return calendarDays;

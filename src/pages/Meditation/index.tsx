@@ -21,7 +21,8 @@ import { useBadgeStore } from '../../store/useBadgeStore';
 import { useNotificationStore } from '../../store/useNotificationStore';
 import { mockBuiltInAudios } from '../../utils/mockData';
 import MoodSelector from '../../components/ui/MoodSelector';
-import type { ToastMessage, AudioConfig } from '../../types';
+import ReflectionCard from '../../components/ui/ReflectionCard';
+import type { ToastMessage, AudioConfig, StressSource, PracticeTag, MeditationSession } from '../../types';
 
 interface MeditationProps {
   addToast: (message: Omit<ToastMessage, 'id'>) => void;
@@ -39,6 +40,8 @@ export default function Meditation({ addToast }: MeditationProps) {
   const [selectedMood, setSelectedMood] = useState<number | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showAudioSelector, setShowAudioSelector] = useState(false);
+  const [showReflection, setShowReflection] = useState(false);
+  const [pendingSession, setPendingSession] = useState<{ duration: number; mood: number } | null>(null);
   
   const startSession = useMeditationStore(state => state.startSession);
   const endSession = useMeditationStore(state => state.endSession);
@@ -105,15 +108,8 @@ export default function Meditation({ addToast }: MeditationProps) {
     setSelectedMood(mood);
   };
 
-  const handleCompleteSession = () => {
-    if (!selectedMood) {
-      addToast({ type: 'error', message: '请选择情绪等级' });
-      return;
-    }
-
-    const actualDuration = Math.max(1, Math.ceil(timer.elapsedSeconds / 60));
-
-    const result = endSession(selectedMood, actualDuration);
+  const finalizeSession = (mood: number, actualDuration: number, reflectionData?: { note?: string; stressSource?: StressSource; tags?: PracticeTag[] }) => {
+    const result = endSession(mood, actualDuration, reflectionData);
     
     if (!result.success) {
       addToast({ type: 'error', message: result.message || '保存失败' });
@@ -152,7 +148,7 @@ export default function Meditation({ addToast }: MeditationProps) {
           '欢迎回来！虽然之前中断了，但今天你又迈出了一步，坚持就是胜利！'
         );
         addToast({ type: 'info', message: '欢迎回来，今天重新开始打卡！' });
-      } else if (currentStreak > 0 && currentStreak % 7 === 0 && currentStreak > 0) {
+      } else if (currentStreak > 0 && currentStreak % 7 === 0) {
         addNotification(
           'encouragement',
           '🔥 太棒了',
@@ -161,11 +157,40 @@ export default function Meditation({ addToast }: MeditationProps) {
       }
     }
 
-    addToast({ type: 'success', message: `冥想完成！${actualDuration}分钟，情绪 ${selectedMood}/10` });
+    const reflectionMsg = reflectionData && (reflectionData.note || reflectionData.stressSource || (reflectionData.tags && reflectionData.tags.length > 0))
+      ? '，复盘已保存'
+      : '';
+    addToast({ type: 'success', message: `冥想完成！${actualDuration}分钟，情绪 ${mood}/10${reflectionMsg}` });
     
     setShowMoodSelector(false);
+    setShowReflection(false);
     setSelectedMood(null);
+    setPendingSession(null);
     timer.reset();
+  };
+
+  const handleCompleteSession = () => {
+    if (!selectedMood) {
+      addToast({ type: 'error', message: '请选择情绪等级' });
+      return;
+    }
+
+    const actualDuration = Math.max(1, Math.ceil(timer.elapsedSeconds / 60));
+    setPendingSession({ duration: actualDuration, mood: selectedMood });
+    setShowMoodSelector(false);
+    setShowReflection(true);
+  };
+
+  const handleReflectionSave = (reflectionData: { note?: string; stressSource?: StressSource; tags?: PracticeTag[] }) => {
+    if (pendingSession) {
+      finalizeSession(pendingSession.mood, pendingSession.duration, reflectionData);
+    }
+  };
+
+  const handleReflectionSkip = () => {
+    if (pendingSession) {
+      finalizeSession(pendingSession.mood, pendingSession.duration);
+    }
   };
 
   const handleAudioSelect = (audioConfig: AudioConfig) => {
@@ -589,6 +614,16 @@ export default function Meditation({ addToast }: MeditationProps) {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {pendingSession && (
+        <ReflectionCard
+          isOpen={showReflection}
+          onClose={handleReflectionSkip}
+          onSave={handleReflectionSave}
+          durationMinutes={pendingSession.duration}
+          moodLevel={pendingSession.mood}
+        />
+      )}
     </div>
   );
 }

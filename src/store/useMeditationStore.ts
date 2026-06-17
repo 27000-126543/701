@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { MeditationSession, MeditationPlan, AudioConfig } from '../types';
+import type { MeditationSession, MeditationPlan, AudioConfig, StressSource, PracticeTag } from '../types';
 import { generateId, calculateRecommendedMinutes, calculateCompletionRate } from '../utils/calculations';
 import { validateDuration, validateMoodLevel } from '../utils/validators';
 import { mockPlan, generateMockSessions } from '../utils/mockData';
@@ -11,7 +11,8 @@ interface MeditationStore {
   currentSession: MeditationSession | null;
   initData: () => void;
   startSession: (duration: number, audio: AudioConfig) => { success: boolean; message?: string };
-  endSession: (moodLevel: number, actualMinutes?: number) => { success: boolean; message?: string; session?: MeditationSession };
+  endSession: (moodLevel: number, actualMinutes?: number, reflectionData?: { note?: string; stressSource?: StressSource; tags?: PracticeTag[] }) => { success: boolean; message?: string; session?: MeditationSession };
+  updateSession: (sessionId: string, updates: Partial<MeditationSession>) => boolean;
   createPlan: (dailyGoal: number) => { success: boolean; message?: string };
   updatePlan: (planId: string, data: Partial<MeditationPlan>) => void;
   calculateRecommendedMinutes: () => number;
@@ -61,7 +62,7 @@ export const useMeditationStore = create<MeditationStore>()(
         return { success: true };
       },
 
-      endSession: (moodLevel, actualMinutes) => {
+      endSession: (moodLevel, actualMinutes, reflectionData) => {
         const validation = validateMoodLevel(moodLevel);
         if (!validation.valid) {
           return { success: false, message: validation.message };
@@ -82,7 +83,10 @@ export const useMeditationStore = create<MeditationStore>()(
           durationMinutes: finalDuration,
           endTime: now.toTimeString().split(' ')[0],
           completed: true,
-          moodLevel
+          moodLevel,
+          note: reflectionData?.note || undefined,
+          stressSource: reflectionData?.stressSource || undefined,
+          tags: reflectionData?.tags || undefined
         };
 
         set((state) => ({
@@ -91,6 +95,19 @@ export const useMeditationStore = create<MeditationStore>()(
         }));
 
         return { success: true, session: completedSession };
+      },
+
+      updateSession: (sessionId, updates) => {
+        const { sessions } = get();
+        const session = sessions.find(s => s.id === sessionId);
+        if (!session) return false;
+
+        set((state) => ({
+          sessions: state.sessions.map(s => 
+            s.id === sessionId ? { ...s, ...updates } : s
+          )
+        }));
+        return true;
       },
 
       createPlan: (dailyGoal) => {

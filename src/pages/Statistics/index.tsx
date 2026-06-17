@@ -13,13 +13,13 @@ import {
   Filler
 } from 'chart.js';
 import { Line, Bar } from 'react-chartjs-2';
-import { TrendingUp, BarChart3, Calendar, Download, Award, Clock, Target, Smile } from 'lucide-react';
+import { TrendingUp, BarChart3, Calendar, Download, Award, Clock, Target, Smile, Lightbulb, Clock3, AlertTriangle } from 'lucide-react';
 import { useUserStore } from '../../store/useUserStore';
 import { useMeditationStore } from '../../store/useMeditationStore';
 import { useBadgeStore } from '../../store/useBadgeStore';
 import { generateMonthlyReportData, generateMonthlyReportPDF } from '../../utils/pdfGenerator';
-import { formatDuration, getMoodEmoji } from '../../utils/calculations';
-import type { MonthlyReport, ToastMessage } from '../../types';
+import { formatDuration, getMoodEmoji, getHabitInsights, generateCalendarData, getMoodColor } from '../../utils/calculations';
+import type { MonthlyReport, ToastMessage, CalendarDay, MeditationSession } from '../../types';
 
 ChartJS.register(
   CategoryScale,
@@ -51,6 +51,7 @@ export default function Statistics({ addToast }: StatisticsProps) {
   });
   const [report, setReport] = useState<MonthlyReport | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [selectedInsightDay, setSelectedInsightDay] = useState<CalendarDay | null>(null);
 
   useEffect(() => {
     initUser();
@@ -148,6 +149,27 @@ export default function Statistics({ addToast }: StatisticsProps) {
       }
     }
   };
+
+  const habitInsights = useMemo(() => getHabitInsights(sessions, 30), [sessions]);
+
+  const last30DaysData = useMemo(() => {
+    const today = new Date();
+    const days: CalendarDay[] = [];
+    const allCalendar = generateCalendarData(sessions, today.getFullYear(), today.getMonth() + 1);
+    const lastMonth = today.getMonth() === 0 ? 12 : today.getMonth();
+    const lastMonthYear = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
+    const lastMonthCalendar = generateCalendarData(sessions, lastMonthYear, lastMonth);
+    const combined = [...lastMonthCalendar, ...allCalendar];
+    
+    for (let i = 29; i >= 0; i--) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - i);
+      const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      const found = combined.find(d => d.date === dateStr);
+      if (found) days.push(found);
+    }
+    return days;
+  }, [sessions]);
 
   const moodChartOptions = {
     ...chartOptions,
@@ -290,6 +312,160 @@ export default function Statistics({ addToast }: StatisticsProps) {
         />
       </motion.div>
 
+      <motion.div variants={itemVariants} className="glass-card p-6">
+        <h3 className="text-xl font-display font-semibold mb-4 flex items-center gap-2">
+          <Lightbulb size={20} className="text-yellow-400" />
+          习惯洞察 · 最近 30 天
+        </h3>
+
+        <div className="grid md:grid-cols-3 gap-4 mb-6">
+          <div className="p-4 rounded-xl bg-gradient-to-br from-primary-500/10 to-primary-600/10 border border-primary-400/20">
+            <div className="flex items-center gap-2 mb-2">
+              <Clock3 size={18} className="text-primary-400" />
+              <span className="text-white/70 text-sm">最常冥想时段</span>
+            </div>
+            {habitInsights.mostFrequentSlot ? (
+              <p className="text-2xl font-bold text-primary-400">{habitInsights.mostFrequentSlot}</p>
+            ) : (
+              <p className="text-white/40 text-sm">暂无数据</p>
+            )}
+            {habitInsights.timeSlotDistribution.length > 0 && (
+              <div className="mt-3 space-y-1.5">
+                {habitInsights.timeSlotDistribution
+                  .filter(s => s.count > 0)
+                  .sort((a, b) => b.count - a.count)
+                  .slice(0, 3)
+                  .map(slot => (
+                    <div key={slot.slot} className="flex items-center justify-between text-xs">
+                      <span className="text-white/60">{slot.label}</span>
+                      <div className="flex items-center gap-2">
+                        <div className="w-20 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                          <div 
+                            className="h-full bg-primary-400 rounded-full transition-all"
+                            style={{ 
+                              width: `${Math.max(10, (slot.count / Math.max(...habitInsights.timeSlotDistribution.map(s => s.count))) * 100)}%` 
+                            }}
+                          />
+                        </div>
+                        <span className="text-white/80 w-6 text-right">{slot.count}</span>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+
+          <div className="p-4 rounded-xl bg-gradient-to-br from-purple-500/10 to-purple-600/10 border border-purple-400/20">
+            <div className="flex items-center gap-2 mb-2">
+              <Smile size={18} className="text-purple-400" />
+              <span className="text-white/70 text-sm">平均情绪变化</span>
+            </div>
+            <p className="text-2xl font-bold" style={{ color: habitInsights.avgMoodChange > 0 ? '#34d399' : habitInsights.avgMoodChange < 0 ? '#f87171' : '#a78bfa' }}>
+              {habitInsights.avgMoodChange > 0 ? '+' : ''}{habitInsights.avgMoodChange.toFixed(1)}
+            </p>
+            <p className="text-xs text-white/50 mt-1">
+              {habitInsights.avgMoodChange > 0 ? '整体情绪在提升 📈' : habitInsights.avgMoodChange < 0 ? '可能需要多关注自己 🤍' : '情绪保持稳定'}
+            </p>
+          </div>
+
+          <div className="p-4 rounded-xl bg-gradient-to-br from-accent-400/10 to-accent-500/10 border border-accent-400/20">
+            <div className="flex items-center gap-2 mb-2">
+              <AlertTriangle size={18} className="text-accent-400" />
+              <span className="text-white/70 text-sm">中断最多星期几</span>
+            </div>
+            {habitInsights.mostInterruptedWeekday ? (
+              <>
+                <p className="text-2xl font-bold text-accent-400">{habitInsights.mostInterruptedWeekday.day}</p>
+                <p className="text-xs text-white/50 mt-1">中断了 {habitInsights.mostInterruptedWeekday.count} 次</p>
+              </>
+            ) : (
+              <p className="text-white/40 text-sm">数据不足</p>
+            )}
+            {habitInsights.weekdayBreakdown.length > 0 && (
+              <div className="mt-3 grid grid-cols-7 gap-1">
+                {habitInsights.weekdayBreakdown.map(w => (
+                  <div key={w.day} className="text-center" title={`${w.totalMinutes} 分钟 / ${w.count} 次`}>
+                    <div 
+                      className={`w-full aspect-square rounded flex items-center justify-center text-[10px] font-medium ${
+                        w.count > 0 ? 'bg-accent-400/30 text-accent-300' : 'bg-white/5 text-white/30'
+                      }`}
+                    >
+                      {w.count || '-'}
+                    </div>
+                    <p className="text-[10px] text-white/40 mt-0.5">{w.day.replace('星期', '')}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm text-white/70">最近 30 天冥想热力图 · 点击查看当日详情</p>
+            <div className="flex items-center gap-1.5 text-[10px] text-white/50">
+              <span>少</span>
+              <div className="w-3 h-3 rounded bg-white/[0.03]" />
+              <div className="w-3 h-3 rounded bg-primary-500/10" />
+              <div className="w-3 h-3 rounded bg-primary-500/20" />
+              <div className="w-3 h-3 rounded bg-primary-500/30" />
+              <div className="w-3 h-3 rounded bg-primary-500/40" />
+              <span>多</span>
+            </div>
+          </div>
+          <div className="grid grid-cols-10 md:grid-cols-15 lg:grid-cols-30 gap-1">
+            {last30DaysData.map((day) => (
+              <motion.div
+                key={day.date}
+                whileHover={{ scale: 1.2, y: -2 }}
+                onClick={() => day.hasMeditation && setSelectedInsightDay(day)}
+                className={`
+                  aspect-square rounded-md cursor-pointer transition-colors
+                  ${day.intensity === 0 ? 'bg-white/[0.03]' : ''}
+                  ${day.intensity === 1 ? 'bg-primary-500/10' : ''}
+                  ${day.intensity === 2 ? 'bg-primary-500/20' : ''}
+                  ${day.intensity === 3 ? 'bg-primary-500/30' : ''}
+                  ${day.intensity >= 4 ? 'bg-primary-500/40' : ''}
+                  ${day.hasMeditation ? 'hover:bg-primary-500/60' : ''}
+                `}
+                title={`${day.date}${day.hasMeditation ? ` · ${day.durationMinutes}分钟` : ''}`}
+              />
+            ))}
+          </div>
+          <div className="flex justify-between mt-1 text-[10px] text-white/30">
+            <span>{last30DaysData[0]?.date.slice(5) || ''}</span>
+            <span>今天</span>
+          </div>
+        </div>
+
+        {selectedInsightDay && selectedInsightDay.sessions && selectedInsightDay.sessions.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mt-5 pt-5 border-t border-white/10"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-semibold flex items-center gap-2">
+                <Calendar size={16} className="text-primary-400" />
+                {selectedInsightDay.date} · 共 {selectedInsightDay.sessionCount} 次 · {selectedInsightDay.durationMinutes} 分钟
+              </h4>
+              <button
+                onClick={() => setSelectedInsightDay(null)}
+                className="text-white/50 hover:text-white text-sm px-2 py-1 rounded bg-white/5 hover:bg-white/10"
+              >
+                收起
+              </button>
+            </div>
+            <div className="space-y-2 max-h-72 overflow-y-auto">
+              {selectedInsightDay.sessions.map(session => (
+                <SessionDetailCard key={session.id} session={session} />
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </motion.div>
+
       <motion.div variants={itemVariants} className="grid md:grid-cols-2 gap-6">
         <div className="glass-card p-6">
           <h3 className="text-xl font-display font-semibold mb-4 flex items-center gap-2">
@@ -404,5 +580,55 @@ function StatCard({
       <p className="text-white/60 text-sm mb-1">{label}</p>
       <p className="text-xl font-bold">{value}</p>
     </motion.div>
+  );
+}
+
+function SessionDetailCard({ session }: { session: MeditationSession }) {
+  return (
+    <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-primary-500/20 flex items-center justify-center">
+            🧘
+          </div>
+          <div>
+            <p className="font-medium text-sm">{session.audioName}</p>
+            <p className="text-xs text-white/50">{session.startTime} - {session.endTime}</p>
+          </div>
+        </div>
+        <div className="text-right">
+          <p className="text-primary-400 font-semibold">{session.durationMinutes} 分钟</p>
+          {session.moodLevel && (
+            <p className="text-xs mt-0.5" style={{ color: getMoodColor(session.moodLevel) }}>
+              {getMoodEmoji(session.moodLevel)} {session.moodLevel}/10
+            </p>
+          )}
+        </div>
+      </div>
+      {(session.stressSource || (session.tags && session.tags.length > 0) || session.note) && (
+        <div className="mt-2 pt-2 border-t border-white/5 space-y-1.5">
+          {session.stressSource && (
+            <p className="text-xs text-white/60">
+              <span className="text-white/40">压力来源: </span>
+              <span className="text-accent-400">{session.stressSource}</span>
+            </p>
+          )}
+          {session.tags && session.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {session.tags.map(tag => (
+                <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full bg-primary-500/15 text-primary-300 border border-primary-500/20">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+          {session.note && (
+            <p className="text-xs text-white/60 italic bg-white/[0.02] rounded p-2">
+              "{session.note}"
+            </p>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
